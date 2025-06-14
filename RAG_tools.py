@@ -1,10 +1,11 @@
-# RAG_tools.pygh repo create
+# RAG_tools.py
 
 """Wrap all low-level functions into BaseTool classes + registry."""
 import json, inspect, pandas as pd
-from typing import Any, Dict, Optional
-from langchain_core.tools import BaseTool
 import RAG_tool_functions as tf
+from typing import Any, Dict, Optional, Callable
+from pydantic import BaseModel, SkipValidation
+from langchain_core.tools import BaseTool
 
 # —— 会话级状态 —— (DF + scalar)
 _STATE: Dict[str, Any] = {"current_df": None, "last_scalar": None}  # 把跨步骤共享的缓存清零，确保每次新请求不会受到上次遗留 DataFrame 或标量的影响。
@@ -14,10 +15,18 @@ def reset_state() -> None:
     _STATE["last_scalar"] = None
 
 class DataFrameTool(BaseTool):  # BaseTool 来自 LangChain ，用于把任意函数包装成「可在 Agent/Graph 里统一调用」的工具对象。
-    # Type-hint 写法，告诉静态检查器这三个属性的类型。最后一个 callable / Callable：表示 “可以被调用的对象（函数或带 __call__ 的对象）”。
+    """
+    Type-hint 写法，告诉静态检查器这三个属性的类型。最后一个 callable / Callable：表示 “可以被调用的对象（函数或带 __call__ 的对象）”。
+    包装任意表格处理函数，使其在 LangGraph / Agent 中可统一调用。
+    """
+
     name: str
     description: str
-    func: callable
+    func: SkipValidation[Callable[..., Any]]
+    # 屏蔽 “无法对 callable 做严格校验” 的警告
+
+    model_config = {"arbitrary_types_allowed": True}
+    # 遇到任何不是标准 Python 类型（如 function、module、Tensor…）都别校验，直接存。
 
     def _run(self, tool_input: str) -> str:             # sync only
         args = json.loads(tool_input) if tool_input else {} # 解析 tool_input → args（如果字符串为空就给空字典）。

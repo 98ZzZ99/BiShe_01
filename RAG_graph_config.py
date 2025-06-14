@@ -9,6 +9,7 @@ from RAG_subgraph_tabular     import build_tabular_subgraph
 from RAG_subgraph_kg      import build_kg_subgraph
 from RAG_subgraph_anomaly import build_anomaly_subgraph
 from RAG_subgraph_viz     import build_viz_subgraph
+from RAG_subgraph_tabular_react import build_tabular_react_subgraph
 
 class PipelineState(TypedDict): # TypedDict用于给 dict 加上「键必须存在且类型固定」的静态约束。这相当于在类型层面声明：我们的「共享状态」一定包含这四个键。
     user_input:         str
@@ -17,6 +18,12 @@ class PipelineState(TypedDict): # TypedDict用于给 dict 加上「键必须存�
     llm_json:           str
     execution_output:   Any # DataFrame / scalar / file path / str
 # 调用 StateGraph(PipelineState) 时，LangGraph 会用这份类型信息来做静态检查：每个节点对 state 的读写都应该遵守这个 schema。这样能在开发期提前暴露字段拼写或类型错误。
+# -------- ReAct 新增 --------
+    scratchpad: str              # 记录 Thought / Action / Observation
+    llm_output: str              # 本轮原始 LLM 回复
+    action: dict | None          # 解析成功的 Action JSON
+    final_answer: str | None
+    step: int                    # 防死循环
 
 # 以下三个并不是类，而是普通包裹函数，每个函数内部真正调用的类实例就是等号右边的部分。
 _Pre  = PreprocessingNode()
@@ -43,7 +50,8 @@ def build_graph():
 
     # sub-graphs
     tabular = build_tabular_subgraph()  # 返回编译好的 StateGraph
-    sg.add_subgraph("tabular", tabular) # add_subgraph 方法会把子图的所有节点和边添加到主图中（把它当成父图的“巨型节点”）。
+    # sg.add_subgraph("tabular", tabular) # add_subgraph 方法会把子图的所有节点和边添加到主图中（把它当成父图的“巨型节点”）。
+    sg.add_subgraph("tabular", build_tabular_react_subgraph())  # ReAct 子图
     sg.add_subgraph("kg", build_kg_subgraph())
     sg.add_subgraph("anomaly", build_anomaly_subgraph())
     sg.add_subgraph("viz", build_viz_subgraph())

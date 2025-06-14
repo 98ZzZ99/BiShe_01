@@ -3,6 +3,7 @@
 """Entry point — builds and runs the LangGraph StateGraph pipeline."""
 from dotenv import load_dotenv, find_dotenv
 from RAG_graph_config import build_graph
+from RAG_subgraph_tabular_react import build_tabular_react_subgraph
 
 # — 在任何其他 import 之前加载 .env —
 load_dotenv(find_dotenv(), override=True, verbose=True) # find_dotenv()	递归向上寻找最近的 .env 文件并返回完整路径。override 允许 .env 中的键值覆盖进程里已有的同名环境变量 （默认是不覆盖的）。 verbose=True 允许打印加载的 .env 文件路径
