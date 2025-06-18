@@ -1,5 +1,7 @@
 # RAG_node_2_execution.py
 
+# 可以删除！！！！！
+
 """ExecutionNode — 读取 JSON actions → 调用工具 → 返回最终结果。"""
 import json, pandas as pd
 from RAG_tools import TOOL_REGISTRY, reset_state

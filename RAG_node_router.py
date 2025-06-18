@@ -34,7 +34,7 @@ class RouterNode:
                 raise EnvironmentError("NGC_API_KEY not set for llm router")
             self.client = OpenAI(
                 base_url="https://integrate.api.nvidia.com/v1",
-                api_key=NGC_API_KEY,
+                api_key=os.getenv("NGC_API_KEY"),
                 timeout=30,
             )
 
@@ -50,10 +50,10 @@ class RouterNode:
     _SYSTEM_MSG = (
         "You are a routing assistant. "
         "Return ONLY one token from {tabular, kg, anomaly, viz}. "
-        "Decision rules:\n"
-        "- If the user asks about relationships, paths or Cypher ⇒ kg\n"
-        "- If the user asks for anomaly/outlier detection ⇒ anomaly\n"
-        "- If the user asks to plot/visualise ⇒ viz\n"
+        "Decision rules:"
+        "- If the user asks about relationships, paths or Cypher ⇒ kg"
+        "- If the user asks for anomaly/outlier detection ⇒ anomaly"
+        "- If the user asks to plot/visualise ⇒ viz"
         "- Otherwise ⇒ tabular"
     )
 

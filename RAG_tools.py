@@ -46,7 +46,7 @@ class DataFrameTool(BaseTool):  # BaseTool 来自 LangChain ，用于把任意�
 
 # —— 动态注册 —— 只要 _PREFIX 即会自动生成工具
 _PREFIX = (
-    "select_rows", "sort_rows", "group_", "top_n", "filter_date_range",
+    "select_rows", "sort_rows", "group_", "top_n", "filter_date_between_start_end",
     "add_derived_column", "rolling_average", "calculate_", "count_rows",
     "graph_export", "plot_machine_avg_bar", "plot_concurrent_tasks_line"
 )

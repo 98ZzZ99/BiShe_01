@@ -1,5 +1,2 @@
-import importlib, sys
-lg = importlib.import_module("langgraph")
-print("path:", lg.__file__)
-print("add_subgraph ?", hasattr(lg.StateGraph, "add_subgraph"))
-exit()
+import os, dotenv, pathlib; ef=pathlib.Path('.env'); print('env?',ef.exists(),ef.resolve()); dotenv.load_dotenv(); print('KEY =', os.getenv('NGC_API_KEY'))
+

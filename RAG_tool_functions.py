@@ -20,15 +20,24 @@ import numpy as np
 TIME_COLS = ["Scheduled_Start", "Scheduled_End", "Actual_Start", "Actual_End"]
 CSV_FILE = os.path.join("data", "hybrid_manufacturing_categorical.csv")
 
-
 # ----------- 通用小工具 -----------
 def _df(cur):  # 始终返回一个 DataFrame；避免布尔歧义
     return cur if cur is not None else load_data()
 
-def load_data():
-    if not os.path.exists(CSV_FILE):
-        raise FileNotFoundError(CSV_FILE)
-    return pd.read_csv(CSV_FILE, parse_dates=TIME_COLS, dayfirst=False)
+#def load_data():
+#     if not os.path.exists(CSV_FILE):
+#         raise FileNotFoundError(CSV_FILE)
+#     return pd.read_csv(CSV_FILE, parse_dates=TIME_COLS, dayfirst=False)
+
+def load_data(path: str | None = None):
+    """
+    如果外部传入 path ⇒ 读取该文件；否则读默认 CSV_FILE。
+    这样旧代码 (load_data()) 和新代码 (load_data(some_path)) 都能工作。
+    """
+    path = path or CSV_FILE
+    if not os.path.exists(path):
+        raise FileNotFoundError(path)
+    return pd.read_csv(path, parse_dates=TIME_COLS, dayfirst=False)
 
 def _num(s):
     """安全转数值"""
@@ -126,7 +135,7 @@ def group_top_n(cur, args):
     id_cols = [c for c in ("Job_ID", "Machine_ID") if c in out.columns]
     return out[id_cols + [g, s]]
 
-def filter_date_range(cur, args):
+def filter_date_between_start_end(cur, args):
     """
     快捷时间窗口
       args = {"column":"Actual_Start",
