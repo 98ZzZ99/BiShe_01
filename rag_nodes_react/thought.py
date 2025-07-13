@@ -2,20 +2,18 @@
 # Thought-LLM 节点：拼 Prompt → 叫 LLM → 把回复写回 state。
 # 取代旧 PromptingNode 在 Tabular 分支 中“一次全量生成计划”的功能。
 
+from __future__ import annotations
 from typing import Dict, Any
 from string import Template
 from RAG_tools import TOOL_REGISTRY
-# from dotenv import load_dotenv; load_dotenv()
-# from dotenv import load_dotenv; load_dotenv()
-import os
 from openai import OpenAI
-import pandas as pd
+import os, pandas as pd, logging
 import os, dotenv; dotenv.load_dotenv()
+
+log = logging.getLogger("rag.thought")
 
 # ---------- 环境 ----------
 dotenv.load_dotenv()
-print("[DEBUG] key =", os.getenv("NGC_API_KEY"))
-
 client = OpenAI(
     base_url="https://integrate.api.nvidia.com/v1",
     api_key=os.getenv("NGC_API_KEY"),
@@ -38,13 +36,23 @@ COLS = ", ".join(pd.read_csv("data/hybrid_manufacturing_categorical.csv", nrows=
 # ---------- 动态拼接全部工具描述 ----------
 # \n 是换行符；.join() 把多行字符串串起来；f"### …" 是 Markdown 标题格式。
 # 这样 prompt 中就带「函数名 + 简短功能说明」，LLM 不会再只看到固定几行。
+# TOOL_SPEC = "\n".join(
+#     f"### {name}\n{tool.description}" for name, tool in TOOL_REGISTRY.items()
+# )
 TOOL_SPEC = "\n".join(
-    f"### {name}\n{tool.description}" for name, tool in TOOL_REGISTRY.items()
+    f"### {name}\n{tool.description}\nRequired keys: {', '.join(tool.signature)}"
+    for name, tool in TOOL_REGISTRY.items()
 )
 
 _PROMPT_T = Template("""
 You are an assistant that MUST translate a user's natural‑language request into a raw JSON command describing a sequence of data‑processing steps.
 If the question restricts rows (e.g. “for Grinding jobs”), ALWAYS start with a select_rows action that applies that filter.
+
+Decision hints:
+– If the user asks for delay / duration between two time columns, first call add_derived_column OR directly call calculate_delay_avg / calculate_delay_avg_grouped instead of naïvely putting "colA - colB" into other tools.
+– After aggregation (group_by_aggregate / group_top_n) do not re-aggregate the already-aggregated table unless the user explicitly asks so.
+– If you still need to filter rows afterwards, DO NOT call *_avg tools; use add_derived_column or select_columns instead.
+
 
 $tool_spec
 
@@ -84,66 +92,55 @@ User: ${user}
 Return either  
   • exactly ONE such object, **not wrapped in an "actions" list**  
   • or {"finish":"<answer>"} if you are done.
+  
+Additional formatting rule
+--------------------------
+• When you need to aggregate an *existing* column, ALWAYS use
+  {
+      "function": "group_by_aggregate",
+      "args": {
+          "agg"         : "<avg|sum|min|max|…>",
+          "group_column": "<group key>",
+          "column"      : "<target column>"
+      }
+  }
+  DO NOT wrap the column inside "derived".
+
+Example
+~~~~~~~
+User     : "Average Energy_Consumption by Operation_Type"
+Assistant: {
+             "actions":[
+               {"function":"group_by_aggregate",
+                "args":{"agg":"avg","group_column":"Operation_Type",
+                        "column":"Energy_Consumption"}}
+             ]
+           }
 """.lstrip())
 # scratchpad: 是一个字符串，包含之前的 LLM 回复（观察），用于上下文。
 
 # ---------- node ----------
 def thought_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    # sp   = state.get("scratchpad", "")  # 第一次循环 scratchpad 不存在 → 给空串；之后把旧内容取出来做上下文。
-    # user = state["processed_input"]     # 预处理阶段留下的英文/中译英文语句。
-
-    # .substitute()的方法，用实参替换模板里的 $占位符。
     prompt = _PROMPT_T.substitute(
-        tool_spec   = TOOL_SPEC,
-        cols        = COLS,
-        scratchpad  = state.get("scratchpad", ""),
-        user        = state["processed_input"]
+        tool_spec  = TOOL_SPEC,
+        cols       = COLS,
+        scratchpad = state.get("scratchpad", ""),
+        user       = state["processed_input"],
     )
+
+    log.debug("LLM prompt (first 400 chars):\n%s", prompt[:400])
 
     resp = client.chat.completions.create(
         model="meta/llama-3.1-8b-instruct",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.0,
         max_tokens=1024,
-        stream=False,
+        response_format={"type": "json_object"},   # ←★ 保证纯 JSON :contentReference[oaicite:3]{index=3}
+        stop=["```"],                              # ←★ 防止 markdown 包裹 :contentReference[oaicite:4]{index=4}
     )
 
-    print("[LLM OUTPUT]", resp.choices[0].message.content[:400])
     state["llm_output"] = resp.choices[0].message.content.strip()
-    print("[PROMPT]", prompt[:400])
+    log.debug("LLM raw output: %s", state["llm_output"])
     return state
-
-# {_PROMPT_T.substitute(tools=", ".join(TOOL_REGISTRY), scratchpad=sp, user=user)}
-# """
-#     # stream = client.chat.completions.create(
-#     #     model="meta/llama-3.1-70b-instruct",
-#     #     messages=[{"role": "user", "content": prompt}],
-#     #     temperature=0.2, top_p=0.7,
-#     #     max_tokens=1024, stream=True
-#     # )
-#     # rsp_text = ""
-#     # for ch in stream:
-#     #     delta = ch.choices[0].delta.content
-#     #     if delta:
-#     #         print(delta, end="", flush=True)
-#     #         rsp_text += delta
-#     # state["llm_output"] = rsp_text.strip()
-#
-#
-#     # 更新 scratchpad & 输出
-#     # state["llm_output"] = stream               # 把模型回复存入状态，让 validator 用。
-#     # state["scratchpad"] = sp + ("\n" if sp else "") + rsp_text   # 把新回复附加到历史，对 LLM 而言就是“Observation 已写入”。
-#
-#     resp = client.chat.completions.create(
-#         model="meta/llama-3.1-8b-instruct",
-#         messages=[{"role": "user", "content": prompt}],
-#         temperature=0.0,
-#         max_tokens=1024,
-#         stream=False,                         # ←★★ 关掉流式
-#     )
-#     content = resp.choices[0].message.content
-#     state["llm_output"] = content            # downstream 看到的就是纯 str
-#
-#     return state
 
 

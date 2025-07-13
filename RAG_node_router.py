@@ -19,9 +19,9 @@ NGC_API_KEY = os.getenv("NGC_API_KEY")        # 若用 llm 模式
 
 # --- keyword sets ---------------------------------------------------------
 _KEYWORDS = {   # 字典
-    "kg"      : {"graph","cypher","relationship","path","neo4j"},
+    # "kg"      : {"graph","cypher","relationship","path","neo4j"},
     "anomaly" : {"anomaly","outlier","异常","离群","grubbs","k-nn"},
-    "viz"     : {"plot","chart","visualise","可视化","画图","histogram"},
+    # "viz"     : {"plot","chart","visualise","可视化","画图","histogram"},
 }
 
 class RouterNode:

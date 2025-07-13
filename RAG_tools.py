@@ -41,6 +41,14 @@ class DataFrameTool(BaseTool):  # BaseTool 来自 LangChain ，用于把任意�
             _STATE["last_scalar"] = result
             return str(result)
 
+    @property
+    def signature(self):
+        # 先尝试类级 __signature__；若未生成，再退回真正函数的 inspect.signature
+        sig = getattr(type(self), "__signature__", None)
+        if sig is None:
+            sig = inspect.signature(self.func)
+        return sig.parameters    # ← 返回一个有序映射，可在外部直接 join
+
     async def _arun(self, tool_input: str) -> str:      # not used
         raise NotImplementedError()
 
@@ -48,7 +56,7 @@ class DataFrameTool(BaseTool):  # BaseTool 来自 LangChain ，用于把任意�
 _PREFIX = (
     "select_rows", "sort_rows", "group_", "top_n", "filter_date_between_start_end",
     "add_derived_column", "rolling_average", "calculate_", "count_rows",
-    "graph_export", "plot_machine_avg_bar", "plot_concurrent_tasks_line"
+    "graph_export", "plot_machine_avg_bar", "plot_concurrent_tasks_line", "select_columns"
 )
 TOOL_REGISTRY: Dict[str, DataFrameTool] = {}    # 创建一个全局字典，键是函数名，值是已经包装好的 DataFrameTool 实例，方便运行期动态查找。
 
