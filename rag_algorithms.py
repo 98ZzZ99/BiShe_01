@@ -63,26 +63,25 @@ def _try_get_score(model, X, prefer_neg=True) -> np.ndarray:
     return scores.astype(float)
 
 # 供子图调用
-请问一下这3种run_algo的写法有何区别？
-def run_algo(name:str, X):
-    """fit + decision_function → 返回 anomaly_score 1‑D ndarray"""
-    mdl = ALGOS[name]()             # 现在才真正实例化
-    mdl.fit(X)
-    # PyOD / isotree 接口有差异：统一用 decision_function / predict
-    if hasattr(mdl, "decision_function"):
-        return mdl.decision_function(X)
-    else:                            # e.g. isotree
-        return mdl.predict(X, output="score")
-def run_algo(name: str, X: np.ndarray) -> np.ndarray:
-    if name == "EIF":
-        scaler = StandardScaler()          # ★ 1. 标准化
-        X_ = scaler.fit_transform(X)
-    else:
-        X_ = X                             # 其他算法用原数据
-
-    model = ALGOS[name]()
-    model.fit(X_)
-    return -model.predict(X_).astype(float)
+# def run_algo(name:str, X):
+#     """fit + decision_function → 返回 anomaly_score 1‑D ndarray"""
+#     mdl = ALGOS[name]()             # 现在才真正实例化
+#     mdl.fit(X)
+#     # PyOD / isotree 接口有差异：统一用 decision_function / predict
+#     if hasattr(mdl, "decision_function"):
+#         return mdl.decision_function(X)
+#     else:                            # e.g. isotree
+#         return mdl.predict(X, output="score")
+# def run_algo(name: str, X: np.ndarray) -> np.ndarray:
+#     if name == "EIF":
+#         scaler = StandardScaler()          # ★ 1. 标准化
+#         X_ = scaler.fit_transform(X)
+#     else:
+#         X_ = X                             # 其他算法用原数据
+#
+#     model = ALGOS[name]()
+#     model.fit(X_)
+#     return -model.predict(X_).astype(float)
 def run_algo(name: str, X: np.ndarray) -> np.ndarray:
     """
     统一调度各算法，返回连续 anomaly score。
