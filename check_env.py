@@ -2,7 +2,8 @@
 
 reqs = [
     "langgraph", "langchain", "langchain_openai", "openai",
-    "pandas", "networkx", "pyvis", "neo4j", "matplotlib", "plotly"
+    "pandas", "networkx", "pyvis", "neo4j", "matplotlib", "plotly",
+    "sktree"
 ]
 missing = []
 for r in reqs:

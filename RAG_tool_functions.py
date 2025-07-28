@@ -16,6 +16,7 @@ import os, re
 import pandas as pd
 import numpy as np
 import operator as _op
+from pathlib import Path
 
 # ---------- 常量 ----------
 _BOPS = {"==": _op.eq, "!=": _op.ne, "<=": _op.le,
@@ -63,11 +64,36 @@ def _df(cur):
 #     return pd.read_csv(CSV_FILE, parse_dates=TIME_COLS, dayfirst=False)
 
 def load_data(path: str | None = None) -> pd.DataFrame:
-    """读取默认或指定 CSV 并解析时间列"""
+    """
+    • 如果文件包含 TIME_COLS 中的列 → 直接 parse_dates
+    • 否则普通读取，再尝试把 'time_stamp' 或任何 *_timestamp 列转为 datetime
+    """
     path = path or CSV_FILE
-    if not os.path.exists(path):
+    path = Path(path)
+
+    if not path.exists():
         raise FileNotFoundError(path)
-    return pd.read_csv(path, parse_dates=TIME_COLS, dayfirst=False)
+
+    # 1) 先读取首行拿全部列名
+    with path.open("r", encoding="utf‑8", errors="ignore") as f:
+        header = f.readline().rstrip("\n")
+    cols = [c.strip() for c in header.split(",")]
+
+    # 2) 仅保留真正存在的日期列
+    date_cols = [c for c in TIME_COLS if c in cols]
+
+    try:
+        df = pd.read_csv(path, parse_dates=date_cols or None, dayfirst=False)
+    except ValueError:
+        # 极端情况下 parse_dates 与 dtype 冲突，再退回普通读
+        df = pd.read_csv(path)
+
+    # 3) 兜底：把 'time_stamp' 或带 timestamp 的列转 datetime
+    for c in df.columns:
+        if c.lower().endswith("timestamp") or c.lower() == "time_stamp":
+            df[c] = pd.to_datetime(df[c], errors="coerce")
+
+    return df
 
 def _num(s: pd.Series):
     """安全转数值（失败返回 NaN）"""

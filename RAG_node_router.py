@@ -20,7 +20,11 @@ NGC_API_KEY = os.getenv("NGC_API_KEY")        # 若用 llm 模式
 # --- keyword sets ---------------------------------------------------------
 _KEYWORDS = {   # 字典
     # "kg"      : {"graph","cypher","relationship","path","neo4j"},
-    "anomaly" : {"anomaly","outlier","异常","离群","grubbs","k-nn"},
+"anomaly": {
+    "anomaly", "anomalies", "anomaly detection",
+    "outlier", "outliers", "detect anomalies",
+    "eif", "elf"  # 用户常说的算法名
+    },
     # "viz"     : {"plot","chart","visualise","可视化","画图","histogram"},
 }
 

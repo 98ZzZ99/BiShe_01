@@ -1,15 +1,5 @@
 # RAG_node_0_preprocessing.py
 
-# class PreprocessingNode:
-#     def __init__(self) -> None:
-#         print("[LOG] PreprocessingNode initialized.")
-#
-#     def run(self, user_input: str) -> str:
-#         print("[LOG] PreprocessingNode running …")
-#         out = user_input.strip()
-#         print(f"[LOG] Preprocessing completed. Output: {out}")
-#         return out
-
 """
 预处理节点：
 1. 读取用户可能给出的 csv 路径（或默认 data 文件夹）并抓取列名；
@@ -24,10 +14,73 @@ import pandas as pd
 from rapidfuzz import process, fuzz          # pip install rapidfuzz
 from sentence_transformers import SentenceTransformer, util  # pip install sentence-transformers
 from RAG_tool_functions import load_data
+from pathlib import Path
 
 # SentenceTransformer 是 Hugging-Face 上的句向量库，可把字符串映射到 384 维向量，做语义相似度计算。
 # all-MiniLM-L6-v2 是官方提供的轻量 22 M 参数模型，速度是 mpnet-base 的 5 倍而保留 ~90 % 质量，非常适合实时纠错任务。
 _MODEL = SentenceTransformer("all-MiniLM-L6-v2")   # 体积小、加载快
+
+def _find_csv(candidate: str | None) -> Path | None:
+    """
+    1) 若 candidate 是绝对/相对路径且存在 → 返回
+    2) 否则依次在以下目录查找：
+       • data/
+       • data/A/
+       • 项目根目录
+    找到即返回 Path；都找不到返回 None
+    """
+    search_dirs = [Path.cwd() / "data",
+                   Path.cwd() / "data" / "A",
+                   Path.cwd()]
+    if candidate:
+        p = Path(candidate)
+        if p.is_file():
+            return p
+        # 只给了文件名，尝试在 search_dirs 里拼路径
+        search_dirs = [d for d in search_dirs]
+
+    for d in search_dirs:
+        p = d / candidate if candidate else None
+        if p and p.is_file():
+            return p
+    return None
+# ---------------------------------------------------------------- #
+
+class PreprocessingNode:
+    def __init__(self) -> None:
+        print("[LOG] PreprocessingNode (robust) initialized.")
+
+    def run(self, user_input: str) -> str:
+        print("[LOG] Preprocessing running …")
+
+        # 1. 捕获 *.csv
+        m = re.search(r"\b([A-Za-z0-9_./\\-]+\.csv)\b", user_input)
+        csv_path = _find_csv(m.group(1)) if m else None
+        if csv_path is None:
+            # 完全找不到 → 抛错误，交由上层捕获
+            raise FileNotFoundError("❌ 找不到任何 CSV 文件，请检查文件名/路径")
+
+        df = load_data(str(csv_path))            # ← 一定能成功
+        columns = df.columns.tolist()
+
+        # 2. 列名纠错（同原逻辑，略）
+        def _replace(match):
+            word = match.group(0)
+            real = _best_match(word, columns)
+            return real or word
+
+        pattern = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+        corrected = pattern.sub(_replace, user_input)
+        corrected = re.sub(r"\s+", " ", corrected).strip()
+
+        print("[BEFORE]", user_input)
+        print("[AFTER ]", corrected)
+
+        # ---- 关键改动 ----
+        return {
+            "processed_input": corrected,
+            "csv_path": str(csv_path)  # 让后续子图能直接拿到路径
+        }
 
 def _best_match(token:str, columns:List[str])->str|None:
     # 形参 token：     在用户文本里捕获的「可能是列名」的词
@@ -46,41 +99,4 @@ def _best_match(token:str, columns:List[str])->str|None:
     scores = util.cos_sim(emb_token, emb_cols)[0].tolist()
     return candidates[scores.index(max(scores))]
 
-class PreprocessingNode:
-    # 抓真实列名：load_data() 读 CSV→df.columns。
-    # 列名语义纠错：执行上文算法，把模糊列名改成真列名，降低下游报错。
-    # 日志：__init__ 只打印一次，run() 打印纠正前后文本，便于调试。
-
-    def __init__(self) -> None:
-        print("[LOG] PreprocessingNode (with column-name mapping) initialized.")
-
-    def run(self, user_input:str)->str:
-        print("[LOG] Preprocessing running …")
-
-        # —— 1. 尝试解析用户输入里的 csv 路径 ——
-        m = re.search(r"\b([A-Za-z0-9_./\\-]+\.csv)\b", user_input)
-        with contextlib.suppress(Exception):
-            df = load_data(m.group(1)) if m else load_data()
-        columns = df.columns.tolist()
-
-        # —— 2. 全词扫描并纠正近似列名 ——
-        def _replace(match):
-            # _replace() 回调把每个匹配词送入 _best_match()，若成功找到真实列名则替换，否则保留原词。
-            word = match.group(0)
-            real = _best_match(word, columns)
-            return real or word
-
-        pattern = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")   # 类 SQL 列标识符
-        # 抓取形似 SQL 标识符的词（字母/下划线开头，后续可含数字）。
-        # \b 是「单词边界」，确保只匹配完整文件名 xxx.csv 而非子串。
-        corrected = pattern.sub(_replace, user_input)
-
-        # —— 3. 去除多余空格，统一大小写 ——
-        corrected = re.sub(r"\s+", " ", corrected).strip()
-
-        print("[BEFORE]", user_input)
-        print("[AFTER ]", corrected)
-
-        print(f"[LOG] → corrected query: {corrected}")
-        return corrected
 

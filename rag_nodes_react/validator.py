@@ -99,35 +99,6 @@ def validator_node(state: Dict[str, Any]) -> Dict[str, Any]:
         log.error("JSON decode failed: %s", e)
         return state
 
-    # ---------- finish 分支 ----------
-
-    # if "finish" in data:
-    #
-    #     try:
-    #         fin = Finish.model_validate(data)
-    #         state.update(route="finish", final_answer=fin.finish)
-    #         log.debug("Finish branch with answer: %s", fin.finish)
-    #         return state
-    #     except ValidationError as e:
-    #         state.update(route="error", observation=f"[Finish-Validation] {e}")
-    #         log.error("Finish validation error: %s", e)
-    #         return state
-    #
-    # # ---------- actions 分支 ----------
-    # actions = data.get("actions") or [data]
-    # try:
-    #     state["action_queue"] = [
-    #         Action.model_validate(_normalize(a)).model_dump() for a in actions
-    #     ]
-    #     state["route"] = "execute"
-    #     log.debug("Validated %d action(s) -> route execute", len(actions))
-    #     return state
-    # except ValidationError as e:
-    #     state.update(route="error", observation=f"[Action-Validation] {e}")
-    #     log.error("Action validation error: %s", e)
-    #     return state
-
-
     # -------- 生成 action_queue --------
     try:
         if "actions" in data:                                    # 多步

@@ -33,6 +33,7 @@ def wrap_with_mapping(subgraph, to_child, from_child):
 class PipelineState(TypedDict): # TypedDict用于给 dict 加上「键必须存在且类型固定」的静态约束。这相当于在类型层面声明：我们的「共享状态」一定包含这四个键。
     user_input:         str
     processed_input:    str
+    csv_path: str | None  # ← ★ 新增
     route:              str # <─ new  by Router
     llm_json:           str
     execution_output:   Any # DataFrame / scalar / file path / str
@@ -50,18 +51,16 @@ _Router = RouterNode()
 
 # ---------- wrapper functions --------------------------------------------
 def _pre(state:Dict[str,Any])->Dict[str,Any]:
-    state["processed_input"] = _Pre.run(state["user_input"])
+    # corrected, csv_path = _Pre.run(state["user_input"])
+    sub = _Pre.run(state["user_input"])   # ← 现在拿到 dict
+    state.update(sub)                     # 合并到父 state
+    # state["processed_input"] = corrected
+    # state["csv_path"] = csv_path  # 可能为 None
     return state
 
 def _route(state:Dict[str,Any])->Dict[str,Any]:
     state.update(_Router.run(state["processed_input"]))
     return state
-
-# def flatten_cases(cases_route):
-#     flat_route = []
-#     for cond, dest in cases_route:
-#         flat_route.extend([cond, dest])  # 依次压入 cond、dest
-#     return flat_route
 
 # ---------- build graph ---------------------------------------------------
 def build_graph():
@@ -89,63 +88,8 @@ def build_graph():
         passthrough(build_tabular_react_subgraph())
     )
 
-    # # ② KG —— 只读 processed_input、写 execution_output
-    # sg.add_node(
-    #     "kg",
-    #     wrap_with_mapping(
-    #         build_kg_subgraph(),
-    #         to_child=lambda ps: {"processed_input": ps["processed_input"]},
-    #         # 返回值：新建一个仅含 processed_input 的字典。等价于：
-    #         # def to_child(ps):
-    #         #     return {"processed_input": ps["processed_input"]}
-    #         from_child=lambda ps, cs: (
-    #                 ps.update({"execution_output": cs["execution_output"]}) or ps
-    #         # 把子图输出写回父-state 原地更新，该方法返回 None。由于前一半返回 None，None or ps 结果为 ps；这样整个表达式返回 更新后的父-state。
-    #         # 也等价于：
-    #         # def from_child(ps, cs):
-    #         #     ps["execution_output"] = cs["execution_output"]
-    #         #     return ps
-    #         ),
-    #     ),
-    # )
-
     # ③ Anomaly
     sg.add_node("anomaly", passthrough(build_anomaly_subgraph()))
-
-    # # ④ Viz
-    # sg.add_node("viz", passthrough(build_viz_subgraph()))
-
-    # router → conditional edges
-    # sg.add_conditional_edges(
-    #     "router",
-    #     [
-    #         (lambda s: s["route"] == "kg", "kg"),
-    #         (lambda s: s["route"] == "anomaly", "anomaly"),
-    #         (lambda s: s["route"] == "viz", "viz"),
-    #         # 这里不要再用 list！
-    #         (lambda _: True, "tabular"),
-    #     ],
-    # )
-
-    # router_cases = [
-    #     (lambda s: s["route"] == "kg", "kg"),
-    #     (lambda s: s["route"] == "anomaly", "anomaly"),
-    #     (lambda s: s["route"] == "viz", "viz"),
-    # ]
-    #
-    # flat_router = [x for pair in router_cases for x in pair]
-    #
-    # sg.add_conditional_edges("router", *flat_router, "tabular")   # ← 兜底
-
-    # # ---------- router 条件 ----------
-    # def _router_switch(state: dict) -> str:
-    #     match state["route"]:
-    #         case "kg":      return "kg"
-    #         case "anomaly": return "anomaly"
-    #         case "viz":     return "viz"
-    #     return "tabular"
-    #
-    # sg.add_conditional_edges("router", _router_switch)
 
     # —— 路由条件 ——
     sg.add_conditional_edges(
@@ -156,9 +100,31 @@ def build_graph():
     # ---------- printer → END ----------
     def _print_final(state: dict):
         print("\n=== FINAL ANSWER ===")
-        if state.get("final_answer"):
+        if state.get("final_answer"):  # 普通问答走这里
             print(state["final_answer"])
-        else:  # 兜底：DataFrame 前 10 行
+            return state
+
+        # ---------- 新增：benchmark 汇总 ----------
+        if state.get("eval_summary") is not None:
+            print("*** Benchmark on ensemble pseudo‑labels ***")
+            print(state["eval_summary"].to_string(index=False))
+            print(f"\n⚡ 详细结果已保存至 {state['execution_output']}")
+            return state
+
+        # ---------- Anomaly Benchmark 输出 ----------
+        bench = state.get("bench_summary")
+        if bench is not None:
+            best = state["picked_algo"]
+            print(f"Picked model: {best}")
+            print(f"Latency: {bench.loc[bench.algo == best, 'seconds'].iloc[0]:.2f}s")
+            print(f"Self PR‑AUC: {bench.loc[bench.algo == best, 'pr_auc'].iloc[0]:.4f}")
+            print(f"Excel saved → {state['excel_path']}")
+            print("\nTop‑5 suspicious timestamps:")
+            for ts, sc in state["execution_output"][["time_stamp",
+                                                     "anomaly_score"]].head().values:
+                print(f"• {ts}  (score {sc:.3f})")
+        else:
+            # 兜底：打印 DataFrame or 其他
             df = state.get("execution_output")
             if hasattr(df, "head"):
                 print(df.head(10).to_string(index=False))
